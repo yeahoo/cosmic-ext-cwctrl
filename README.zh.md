@@ -1,0 +1,198 @@
+# cosmic-ext-cwctrl
+
+[![CI](https://github.com/yeahoo/cosmic-ext-cwctrl/actions/workflows/ci.yml/badge.svg)](https://github.com/yeahoo/cosmic-ext-cwctrl/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+[English](README.md) | **简体中文**
+
+在 COSMIC™ 桌面上用命令行查询和控制窗口。
+
+本项目是 [`cosmic-ext-window-helper`](https://github.com/lapause/cosmic-ext-window-helper)
+的 Rust 重写版，启动速度快约 **300 倍**，并额外提供窗口几何信息。
+
+## 为什么要重写
+
+上游的 Python 实现每次调用约 300ms：解释器启动、解析 264KB 协议库，以及
+**无条件等待合成器那批约 150ms 的数据**。绑定到快捷键时这个延迟很明显。
+本实现是一个纯同步的 Wayland 客户端，没有 async runtime，也没有解释器。
+
+| | cwctrl | 上游 (Python) |
+|---|---|---|
+| `activate` / `close` / `maximize` 等 | **1.0 ms** | 307 ms |
+| `list -n` | **1.0 ms** | — |
+| `list`（含 geometry） | 150 ms | 317 ms（且无 geometry） |
+| 二进制 | 2.0 MB | 5.8 MB venv |
+| 常驻内存 | ~4 MB | ~26 MB |
+
+## 安装
+
+```bash
+cargo install --git https://github.com/yeahoo/cosmic-ext-cwctrl
+```
+
+或从源码构建：
+
+```bash
+git clone https://github.com/yeahoo/cosmic-ext-cwctrl
+cd cosmic-ext-cwctrl
+cargo build --release
+install -Dm755 target/release/cwctrl ~/.local/bin/cwctrl
+```
+
+需要 Rust 1.86+ 以及运行中的 COSMIC 会话（`cosmic-comp`）。
+
+## 用法
+
+```
+cwctrl <命令> [参数...] [查询]
+
+  state  [查询]                     以 JSON 输出窗口状态（含 geometry）
+  list   [-n] [查询]                同 state（JSON 数组）
+  activate [查询]                   激活该应用最近使用的那个窗口
+  close    [查询]                   关闭匹配的窗口
+  minimize <true|false> [查询]      最小化 / 取消最小化
+  maximize <true|false> [查询]      最大化 / 取消最大化
+  fullscreen <true|false> [查询]    全屏 / 取消全屏
+  sticky   <true|false> [查询]      固定 / 取消固定
+  move_to  <工作区> <显示器> [查询] 移动到指定工作区
+  cycle    [-b] [查询]              在同组匹配窗口间循环切换焦点
+  interfaces                        列出合成器暴露的 Wayland 接口
+
+  -n, --no-wait   不等待 geometry（约 1ms，geometry 为 null）
+```
+
+### 查询语法
+
+```
+字符串字段: id, app_id, title, workspace.name, output.name
+运算符:     =   相等
+            !=  不等
+            ~=  正则匹配
+            值必须加引号；后缀 i 表示忽略大小写
+布尔字段:   is_active, is_active_app_id, is_maximized, is_minimized,
+            is_fullscreen, is_sticky, workspace.is_visible,
+            workspace.has_focus, output.has_focus
+组合:       and / or / not，以及括号
+```
+
+示例：
+
+```bash
+cwctrl list "app_id ~= 'chrome'i"
+cwctrl list "workspace.is_visible and not is_active"
+cwctrl activate "title ~= 'wezterm'"
+cwctrl maximize true "app_id = 'com.microsoft.VSCode'"
+cwctrl move_to 2 HDMI-A-1 "app_id = 'google-chrome'"
+```
+
+典型的 run-or-raise 快捷键（退出码 `10` 表示没有匹配）：
+
+```bash
+cwctrl activate "app_id = 'com.system76.CosmicTerm'" || cosmic-term
+```
+
+### 激活哪一个窗口
+
+`activate` 只激活**一个**窗口，而不是所有匹配项：
+
+1. 焦点已经在该应用的某个窗口上 → 不做任何事；
+2. 否则激活**最近使用过**的那个。
+
+这个顺序记录在 `$XDG_RUNTIME_DIR/cwctrl-focus-history`。Wayland 和 COSMIC 都
+没有暴露焦点栈，所以只能由客户端自己记；`cycle` 会更新同一份列表，两个命令
+保持一致。
+
+这正是让 `Alt+S` 回到你**真正**在用的那个终端、而不是枚举顺序里第一个的
+原因：
+
+```text
+wezterm1  wezterm2  wezterm3     # 你之前在 wezterm3
+Alt+E  ->  chrome
+Alt+S  ->  wezterm3              # 而不是 wezterm1
+```
+
+其余命令（`close`、`maximize` 等）仍然作用于所有匹配窗口。
+
+### 输出
+
+```json
+[
+  {
+    "id": "jTQOIgg8kjnhQtLhJ7fOawc79y1MXJOb",
+    "app_id": "google-chrome",
+    "title": "Node.js — Google Chrome",
+    "is_active": false,
+    "is_active_app_id": false,
+    "is_maximized": false,
+    "is_minimized": false,
+    "is_fullscreen": false,
+    "is_sticky": false,
+    "workspace": { "name": "1", "is_visible": true, "has_focus": true },
+    "output":    { "name": "HDMI-A-1", "has_focus": true },
+    "geometry":  { "output": "HDMI-A-1", "x": 2649, "y": 32,
+                   "width": 2645, "height": 1486 }
+  }
+]
+```
+
+`geometry` 使用**逻辑像素**，`x`/`y` 相对该显示器左上角（逻辑像素 = 物理像素 /
+缩放因子），可直接用于同样坐标系的 `cosmic-screenshot`。
+
+`id` 是 `ext_foreign_toplevel_handle_v1` 的 identifier，跨进程稳定。
+
+`--no-wait` 下未能读取的字段输出 `null` 而非 `false`，避免把"未知"误报成"否"。
+
+### 语言
+
+消息跟随 locale，检测顺序为 `CWCTRL_LANG`、`LC_ALL`、`LC_MESSAGES`、`LANG`。
+值以 `zh` 开头则用中文，否则英文。强制指定：
+
+```bash
+CWCTRL_LANG=zh cwctrl --help
+```
+
+## 实现说明
+
+用到的协议：
+
+| 协议 | 用途 |
+|---|---|
+| `ext_foreign_toplevel_list_v1` | 枚举所有顶层窗口（含 XWayland），提供 `identifier`/`title`/`app_id` |
+| `zcosmic_toplevel_info_v1` | 用 `get_cosmic_toplevel()` 换取增强 handle |
+| `zcosmic_toplevel_handle_v1` | `state` / `geometry` / `output_enter` / `ext_workspace_enter` |
+| `zcosmic_toplevel_manager_v1` | `activate` / `close` / `set_maximized` / `set_fullscreen` / `move_to_ext_workspace` 等 |
+| `ext_workspace_manager_v1` | 工作区名称与激活状态 |
+| `wl_output` / `wl_seat` | 显示器名；`activate` 需要 seat |
+
+两个容易踩的坑：
+
+1. **`zcosmic_toplevel_info_v1` 自 v2 起不再推送 `title`/`app_id`/`toplevel`**
+   （XML 里标为 `deprecated-since="2"`）。必须先拿到
+   `ext_foreign_toplevel_handle_v1`，再调 `get_cosmic_toplevel()` 换取
+   `zcosmic_toplevel_handle_v1`。
+
+2. **`state`、`geometry`、`workspace` 是固定约 150ms 的延迟批量推送**，
+   不是请求即答。本机实测 30 次：150.1–152.3ms，无抖动。因此本程序**只在
+   需要这些字段时才等待**：控制类命令与 `list -n` 约 1ms 返回；`list` 会等待；
+   控制类命令若查询用到状态字段且首轮无匹配，会再等一轮重试
+   （`Query::uses_deferred_state()` 判定）。
+
+### 为什么不用 `cosmic-protocols`
+
+[`cosmic-protocols`](https://crates.io/crates/cosmic-protocols) crate 的许可是
+**GPL-3.0-only**，会让本二进制也变成 GPL。但它分发的协议 XML 本身是 MIT/HPND
+宽松许可。因此本项目用 MIT 许可的 `wayland-scanner` 直接从 `protocols/` 下
+vendor 的 XML 生成绑定，从而保持整个项目为 MIT。
+
+所有依赖均为宽松许可（`cargo metadata` 扫描无 GPL/AGPL）。各 XML 文件内保留了
+上游版权声明。
+
+## 致谢
+
+- 行为与命令集参考 [`cosmic-ext-window-helper`](https://github.com/lapause/cosmic-ext-window-helper)（MIT）。
+- 协议定义来自 [`pop-os/cosmic-protocols`](https://github.com/pop-os/cosmic-protocols)。
+- 基于 [`wayland-rs`](https://github.com/Smithay/wayland-rs)。
+
+## 许可
+
+MIT — 见 [LICENSE](LICENSE)。
