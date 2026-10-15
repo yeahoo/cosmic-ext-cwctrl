@@ -155,7 +155,9 @@ Alt+S  ->  wezterm3              # 而不是 wezterm1
 ```bash
 cwctrl mousemove 2648 464            # 绝对定位，逻辑像素（与 geometry 同一坐标空间）
 cwctrl mousemove -r 40 30            # 相对移动
+cwctrl mousemove 2648 464 --from 1200 800 --duration 600   # 平滑移动，观众能看清轨迹
 cwctrl click left --at 2648 464      # 先移动再点击
+cwctrl click left --at 2648 464 --from 1200 800 --duration 600   # 平滑移动后点击
 cwctrl click --count 2               # 在当前位置双击
 cwctrl mousedown right && cwctrl mouseup right
 cwctrl scroll down 3
@@ -179,6 +181,9 @@ COSMIC 也没有暴露 `zwlr_virtual_pointer_manager_v1`。这需要 `/dev/uinpu
   某窗口请先 `mousemove` 过去；发按键前可先 `activate`。
 - `-r`（相对）会经过合成器的指针加速，因此是近似的；需要精确时用绝对
   `mousemove`。
+- 平滑移动需要显式给出 `--from X Y`：Wayland 无法读取全局指针位置，起点无法
+  自动获得；不给 `--from` 时仍是过去的瞬移。`--duration MS` 指定时长，
+  `--ease in-out|linear` 指定缓动曲线（默认 `in-out`）。
 - `keydown`/`keyup` 每次调用都会新建并销毁设备，所以跨两次调用按住的修饰键
   不会保持；一次调用内请用组合键（`key ctrl+t`）。
 - 坐标范围只按第一个输出计算；多显示器布局可能需要额外偏移。

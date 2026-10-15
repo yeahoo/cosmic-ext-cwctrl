@@ -265,6 +265,37 @@ impl ScrollAxis {
     }
 }
 
+/// Easing curve for animated pointer movement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ease {
+    Linear,
+    /// Cubic ease-in-out: slow, fast, slow.
+    InOut,
+}
+
+impl Ease {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "linear" | "lin" => Some(Self::Linear),
+            "in-out" | "inout" | "smooth" | "ease" => Some(Self::InOut),
+            _ => None,
+        }
+    }
+
+    fn apply(self, t: f64) -> f64 {
+        match self {
+            Self::Linear => t,
+            Self::InOut => {
+                if t < 0.5 {
+                    4.0 * t * t * t
+                } else {
+                    1.0 - (-2.0 * t + 2.0).powi(3) / 2.0
+                }
+            }
+        }
+    }
+}
+
 pub struct Mouse {
     u: Uinput,
 }
@@ -351,6 +382,60 @@ impl Mouse {
             thread::sleep(Duration::from_millis(10));
         }
     }
+
+    /// Animated absolute move from `from` to `to` over `duration_ms`.
+    ///
+    /// The start point must be supplied by the caller: Wayland exposes no way to
+    /// read the global pointer position, so it cannot be discovered. A wrong
+    /// `from` makes the pointer jump on the first frame.
+    pub fn move_smooth_abs(
+        &self,
+        from: (i32, i32),
+        to: (i32, i32),
+        screen_w: i32,
+        screen_h: i32,
+        duration_ms: u64,
+        ease: Ease,
+    ) {
+        let (steps, frame) = animation_steps(duration_ms);
+        let mut last: Option<(i32, i32)> = None;
+        for i in 1..=steps {
+            let e = ease.apply(f64::from(i) / f64::from(steps));
+            let x = (f64::from(from.0) + f64::from(to.0 - from.0) * e).round() as i32;
+            let y = (f64::from(from.1) + f64::from(to.1 - from.1) * e).round() as i32;
+            if last != Some((x, y)) {
+                self.move_abs(x, y, screen_w, screen_h);
+                last = Some((x, y));
+            }
+            thread::sleep(frame);
+        }
+    }
+
+    /// Animated relative move. Unlike the absolute variant this needs no start
+    /// point, since only the delta is interpolated.
+    pub fn move_smooth_rel(&self, dx: i32, dy: i32, duration_ms: u64, ease: Ease) {
+        let (steps, frame) = animation_steps(duration_ms);
+        let mut sent = (0.0f64, 0.0f64);
+        for i in 1..=steps {
+            let e = ease.apply(f64::from(i) / f64::from(steps));
+            let cur = (f64::from(dx) * e, f64::from(dy) * e);
+            let sx = (cur.0 - sent.0).round() as i32;
+            let sy = (cur.1 - sent.1).round() as i32;
+            sent = cur;
+            if sx != 0 || sy != 0 {
+                self.move_rel(sx, sy);
+            }
+            thread::sleep(frame);
+        }
+    }
+}
+
+/// Split a duration into a frame count (about 60 fps) and a per-frame sleep.
+fn animation_steps(duration_ms: u64) -> (u32, Duration) {
+    let duration_ms = duration_ms.clamp(1, 60_000);
+    let steps = (duration_ms / 16).max(1) as u32;
+    let frame = Duration::from_millis((duration_ms / u64::from(steps)).max(1));
+    (steps, frame)
 }
 
 // ---------------------------------------------------------------- keyboard
@@ -528,6 +613,29 @@ fn is_modifier(code: u16) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn easing() {
+        assert_eq!(Ease::Linear.apply(0.0), 0.0);
+        assert_eq!(Ease::Linear.apply(1.0), 1.0);
+        assert_eq!(Ease::Linear.apply(0.5), 0.5);
+        assert!((Ease::InOut.apply(0.0) - 0.0).abs() < 1e-9);
+        assert!((Ease::InOut.apply(1.0) - 1.0).abs() < 1e-9);
+        assert!((Ease::InOut.apply(0.5) - 0.5).abs() < 1e-9);
+        assert!(Ease::InOut.apply(0.25) < 0.25, "eases in at the start");
+        assert!(Ease::InOut.apply(0.75) > 0.75, "eases out at the end");
+        assert_eq!(Ease::parse("linear"), Some(Ease::Linear));
+        assert_eq!(Ease::parse("in-out"), Some(Ease::InOut));
+        assert_eq!(Ease::parse("nope"), None);
+    }
+
+    #[test]
+    fn animation_frames() {
+        let (steps, frame) = animation_steps(400);
+        assert_eq!(steps, 25);
+        assert_eq!(frame, Duration::from_millis(16));
+        assert_eq!(animation_steps(0).0, 1, "at least one frame");
+    }
 
     #[test]
     fn keycodes() {

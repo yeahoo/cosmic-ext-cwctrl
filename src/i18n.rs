@@ -62,6 +62,10 @@ pub struct Msg {
     pub bad_axis: &'static str,
     pub key_required: &'static str,
     pub bad_key: &'static str,
+    pub from_arity: &'static str,
+    pub duration_arity: &'static str,
+    pub ease_arity: &'static str,
+    pub bad_ease: &'static str,
 
     // query.rs
     pub query_error: &'static str,
@@ -96,12 +100,16 @@ COMMANDS:
   interfaces                            List Wayland interfaces the compositor exposes
 
 INPUT (via uinput; needs write access to /dev/uinput):
-  mousemove <x> <y>                     Move pointer to an absolute logical position
-  mousemove -r <dx> <dy>                Move pointer relatively
+  mousemove <x> <y> [--from X Y] [--duration MS] [--ease in-out|linear]
+                                        Move pointer (absolute, logical px); --from
+                                        animates the move from X Y over MS
+  mousemove -r <dx> <dy> [--duration MS]
+                                        Move pointer relatively (animated if MS given)
   mousedown <left|right|middle>         Press a mouse button
   mouseup   <left|right|middle>         Release a mouse button
-  click [left|right|middle] [--at X Y] [--count N]
-                                        (Double) click; --at moves the pointer first
+  click [left|right|middle] [--at X Y] [--count N] [--from X Y] [--duration MS]
+                                        (Double) click; --at moves the pointer first,
+                                        --from animates that move
   scroll <up|down|left|right> [N]       Scroll the wheel
   keydown <key>                         Press a key (shift, a, Return, ...)
   keyup   <key>                         Release a key
@@ -153,6 +161,10 @@ EXAMPLES:
     bad_axis: "unknown scroll direction '{0}'",
     key_required: "missing key name",
     bad_key: "unknown key '{0}'",
+    from_arity: "'--from' needs X and Y",
+    duration_arity: "'--duration' needs a number of milliseconds",
+    ease_arity: "'--ease' needs a name: in-out or linear",
+    bad_ease: "unknown easing '{0}'",
     query_error: "query syntax error: {0}",
     q_unterminated: "unterminated string literal",
     q_missing_rparen: "missing closing ')'",
@@ -185,12 +197,15 @@ cwctrl — COSMIC 窗口查询与控制
   interfaces                        列出合成器暴露的 Wayland 接口
 
 输入注入 (走 uinput, 需要对 /dev/uinput 的写权限):
-  mousemove <x> <y>                 指针绝对定位 (逻辑像素)
-  mousemove -r <dx> <dy>            指针相对移动
+  mousemove <x> <y> [--from X Y] [--duration MS] [--ease in-out|linear]
+                                    指针绝对定位 (逻辑像素); --from 让光标在 MS
+                                    毫秒内从 X Y 平滑移动过去
+  mousemove -r <dx> <dy> [--duration MS]
+                                    指针相对移动 (带 MS 则平滑)
   mousedown <left|right|middle>     按下鼠标键
   mouseup   <left|right|middle>     松开鼠标键
-  click [left|right|middle] [--at X Y] [--count N]
-                                    (双击) 点击; --at 先把指针移过去
+  click [left|right|middle] [--at X Y] [--count N] [--from X Y] [--duration MS]
+                                    (双击) 点击; --at 先把指针移过去, --from 平滑移动
   scroll <up|down|left|right> [N]   滚轮
   keydown <按键>                    按下按键 (shift, a, Return ...)
   keyup   <按键>                    松开按键
@@ -242,6 +257,10 @@ cwctrl — COSMIC 窗口查询与控制
     bad_axis: "未知的滚动方向 '{0}'",
     key_required: "缺少按键名",
     bad_key: "未知的按键 '{0}'",
+    from_arity: "'--from' 需要 X 和 Y",
+    duration_arity: "'--duration' 需要毫秒数",
+    ease_arity: "'--ease' 需要一个名称: in-out 或 linear",
+    bad_ease: "未知的缓动 '{0}'",
     query_error: "查询语法错误: {0}",
     q_unterminated: "字符串字面量缺少结束引号",
     q_missing_rparen: "缺少右括号 ')'",

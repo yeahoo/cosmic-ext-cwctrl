@@ -163,7 +163,9 @@ than `false`, so "unknown" is never silently reported as "no".
 ```bash
 cwctrl mousemove 2648 464            # absolute, logical px (same space as geometry)
 cwctrl mousemove -r 40 30            # relative
+cwctrl mousemove 2648 464 --from 1200 800 --duration 600   # animated, followable move
 cwctrl click left --at 2648 464      # move, then click
+cwctrl click left --at 2648 464 --from 1200 800 --duration 600   # animated, then click
 cwctrl click --count 2               # double-click at the current pointer
 cwctrl mousedown right && cwctrl mouseup right
 cwctrl scroll down 3
@@ -190,6 +192,10 @@ Limits:
   before sending keys.
 - `-r` (relative) goes through the compositor's pointer acceleration, so it is
   approximate; prefer absolute `mousemove` when precision matters.
+- Smooth movement needs an explicit `--from X Y`: Wayland provides no way to
+  read the global pointer position, so the start cannot be discovered. Without
+  `--from` the pointer teleports, as before. `--duration MS` sets the length and
+  `--ease in-out|linear` the curve (default `in-out`).
 - `keydown`/`keyup` build a device per invocation, so a modifier held across two
   invocations is not preserved; use a chord (`key ctrl+t`) within one call.
 - Only the first output is used to derive the coordinate range; multi-output

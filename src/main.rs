@@ -18,6 +18,9 @@ use wayland_client::Proxy;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Default animation length for a smooth `mousemove` / `click --at`, in ms.
+const DEFAULT_DURATION_MS: u64 = 400;
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match run(&args) {
@@ -618,23 +621,80 @@ fn parse_i32(s: &str) -> Result<i32, Box<dyn Error>> {
         .map_err(|_| i18n::fill1(i18n::m().bad_number, s).into())
 }
 
+/// Parse one of the shared move options (`--from`, `--duration`, `--ease`).
+/// Returns how many arguments were consumed, or `None` if `rest[i]` is not one.
+fn take_move_opt(
+    rest: &[String],
+    i: usize,
+    from: &mut Option<(i32, i32)>,
+    duration: &mut Option<u64>,
+    ease: &mut input::Ease,
+) -> Result<Option<usize>, Box<dyn Error>> {
+    match rest[i].as_str() {
+        "--from" => {
+            let x = rest.get(i + 1).ok_or(i18n::m().from_arity)?;
+            let y = rest.get(i + 2).ok_or(i18n::m().from_arity)?;
+            *from = Some((parse_i32(x)?, parse_i32(y)?));
+            Ok(Some(3))
+        }
+        "--duration" | "--ms" | "-d" => {
+            let v = rest.get(i + 1).ok_or(i18n::m().duration_arity)?;
+            *duration = Some(
+                v.parse()
+                    .map_err(|_| i18n::fill1(i18n::m().bad_number, v))?,
+            );
+            Ok(Some(2))
+        }
+        "--ease" => {
+            let v = rest.get(i + 1).ok_or(i18n::m().ease_arity)?;
+            *ease = input::Ease::parse(v).ok_or_else(|| i18n::fill1(i18n::m().bad_ease, v))?;
+            Ok(Some(2))
+        }
+        _ => Ok(None),
+    }
+}
+
 fn cmd_mousemove(rest: &[String]) -> Result<i32, Box<dyn Error>> {
     let mut relative = false;
     let mut nums: Vec<i32> = Vec::new();
-    for a in rest {
-        match a.as_str() {
-            "-r" | "--relative" => relative = true,
-            _ => nums.push(parse_i32(a)?),
+    let mut from: Option<(i32, i32)> = None;
+    let mut duration: Option<u64> = None;
+    let mut ease = input::Ease::InOut;
+    let mut i = 0;
+    while i < rest.len() {
+        if let Some(n) = take_move_opt(rest, i, &mut from, &mut duration, &mut ease)? {
+            i += n;
+            continue;
         }
+        match rest[i].as_str() {
+            "-r" | "--relative" => relative = true,
+            other => nums.push(parse_i32(other)?),
+        }
+        i += 1;
     }
     if nums.len() != 2 {
         return Err(i18n::m().mousemove_arity.into());
     }
     if relative {
-        Mouse::create(1, 1)?.move_rel(nums[0], nums[1]);
+        let m = Mouse::create(1, 1)?;
+        match duration {
+            Some(ms) => m.move_smooth_rel(nums[0], nums[1], ms, ease),
+            None => m.move_rel(nums[0], nums[1]),
+        }
     } else {
         let (sw, sh) = screen_size()?;
-        Mouse::create(sw, sh)?.move_abs(nums[0], nums[1], sw, sh);
+        let m = Mouse::create(sw, sh)?;
+        match from {
+            Some((fx, fy)) => m.move_smooth_abs(
+                (fx, fy),
+                (nums[0], nums[1]),
+                sw,
+                sh,
+                duration.unwrap_or(DEFAULT_DURATION_MS),
+                ease,
+            ),
+            None => m.move_abs(nums[0], nums[1], sw, sh),
+        }
     }
     Ok(0)
 }
@@ -653,8 +713,15 @@ fn cmd_click(rest: &[String]) -> Result<i32, Box<dyn Error>> {
     let mut btn = Button::Left;
     let mut count: u32 = 1;
     let mut at: Option<(i32, i32)> = None;
+    let mut from: Option<(i32, i32)> = None;
+    let mut duration: Option<u64> = None;
+    let mut ease = input::Ease::InOut;
     let mut i = 0;
     while i < rest.len() {
+        if let Some(n) = take_move_opt(rest, i, &mut from, &mut duration, &mut ease)? {
+            i += n;
+            continue;
+        }
         match rest[i].as_str() {
             "--at" | "-a" => {
                 let x = rest.get(i + 1).ok_or(i18n::m().click_at_arity)?;
@@ -685,8 +752,23 @@ fn cmd_click(rest: &[String]) -> Result<i32, Box<dyn Error>> {
     };
     let m = Mouse::create(sw, sh)?;
     if let Some((x, y)) = at {
-        m.move_abs(x, y, sw, sh);
-        std::thread::sleep(Duration::from_millis(40));
+        match from {
+            Some((fx, fy)) => {
+                m.move_smooth_abs(
+                    (fx, fy),
+                    (x, y),
+                    sw,
+                    sh,
+                    duration.unwrap_or(DEFAULT_DURATION_MS),
+                    ease,
+                );
+                std::thread::sleep(Duration::from_millis(80));
+            }
+            None => {
+                m.move_abs(x, y, sw, sh);
+                std::thread::sleep(Duration::from_millis(40));
+            }
+        }
     }
     m.click(btn, count);
     Ok(0)
