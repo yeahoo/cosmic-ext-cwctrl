@@ -171,6 +171,9 @@ cwctrl mousedown right && cwctrl mouseup right
 cwctrl scroll down 3
 cwctrl key ctrl+alt+t                # press+release; chords supported
 cwctrl keydown shift && cwctrl keyup shift
+cwctrl type 'hello world'            # type ASCII text as key presses
+cwctrl type 'hello' --delay 150      # type slowly, key by key, for an audience
+cwctrl type --paste '任意文本'       # paste any text (incl. non-ASCII) via Ctrl+V
 ```
 
 `enter` / `leave` / `over` are not commands: the compositor generates them
@@ -198,6 +201,10 @@ Limits:
   `--ease in-out|linear` the curve (default `in-out`).
 - `keydown`/`keyup` build a device per invocation, so a modifier held across two
   invocations is not preserved; use a chord (`key ctrl+t`) within one call.
+- `type` simulates a US layout and covers printable ASCII only. Non-ASCII text is
+  refused unless `--paste` is given, which writes the text to the clipboard and
+  sends Ctrl+V (this overwrites the clipboard). `--delay MS` sets the pause
+  between characters (default 20 ms).
 - Only the first output is used to derive the coordinate range; multi-output
   layouts may need an offset.
 

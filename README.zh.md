@@ -163,6 +163,9 @@ cwctrl mousedown right && cwctrl mouseup right
 cwctrl scroll down 3
 cwctrl key ctrl+alt+t                # 按下并松开；支持组合键
 cwctrl keydown shift && cwctrl keyup shift
+cwctrl type 'hello world'            # 以模拟按键输入 ASCII 文本
+cwctrl type 'hello' --delay 150      # 放慢逐字输入，便于观众看清
+cwctrl type --paste '任意文本'       # 用剪贴板 (Ctrl+V) 输入任意文本（含中文）
 ```
 
 `enter` / `leave` / `over` 不是独立命令：它们是合成器在指针进入/离开窗口时
@@ -186,6 +189,9 @@ COSMIC 也没有暴露 `zwlr_virtual_pointer_manager_v1`。这需要 `/dev/uinpu
   `--ease in-out|linear` 指定缓动曲线（默认 `in-out`）。
 - `keydown`/`keyup` 每次调用都会新建并销毁设备，所以跨两次调用按住的修饰键
   不会保持；一次调用内请用组合键（`key ctrl+t`）。
+- `type` 按 US 布局模拟按键，只覆盖可打印 ASCII。非 ASCII 文本会被拒绝，
+  除非加 `--paste`——它把文本写入剪贴板再发 Ctrl+V（会覆盖剪贴板）。
+  `--delay MS` 控制字符间停顿（默认 20 毫秒）。
 - 坐标范围只按第一个输出计算；多显示器布局可能需要额外偏移。
 
 ### 语言

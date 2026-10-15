@@ -476,6 +476,105 @@ impl Keyboard {
             self.key(m, false);
         }
     }
+
+    /// Type text as key presses, assuming a US layout. Returns the first
+    /// character that cannot be produced; nothing is typed in that case.
+    pub fn type_text(&self, text: &str, delay_ms: u64) -> Result<(), char> {
+        for c in text.chars() {
+            if char_to_key(c).is_none() {
+                return Err(c);
+            }
+        }
+        let delay = Duration::from_millis(delay_ms.min(1000));
+        for c in text.chars() {
+            let (code, shift) = char_to_key(c).expect("checked above");
+            if shift {
+                self.key(KEY_LEFTSHIFT, true);
+            }
+            self.key(code, true);
+            thread::sleep(Duration::from_millis(8));
+            self.key(code, false);
+            if shift {
+                self.key(KEY_LEFTSHIFT, false);
+            }
+            if !delay.is_zero() {
+                thread::sleep(delay);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Map a printable US-layout character to (evdev keycode, needs Shift).
+///
+/// Only the US layout is assumed. Non-ASCII characters cannot be produced at
+/// the evdev layer at all -- the clipboard path exists for those.
+pub fn char_to_key(c: char) -> Option<(u16, bool)> {
+    let lower = c.to_ascii_lowercase();
+    if lower.is_ascii_lowercase() {
+        return Some((keycode(&lower.to_string())?, c.is_ascii_uppercase()));
+    }
+    if c.is_ascii_digit() {
+        return Some((keycode(&c.to_string())?, false));
+    }
+    let (code, shift) = match c {
+        ' ' => (57, false),  // KEY_SPACE
+        '\t' => (15, false), // KEY_TAB
+        '\n' => (28, false), // KEY_ENTER
+        '!' => (2, true),    // Shift+1
+        '@' => (3, true),
+        '#' => (4, true),
+        '$' => (5, true),
+        '%' => (6, true),
+        '^' => (7, true),
+        '&' => (8, true),
+        '*' => (9, true),
+        '(' => (10, true),
+        ')' => (11, true),
+        '-' => (12, false), // KEY_MINUS
+        '_' => (12, true),
+        '=' => (13, false), // KEY_EQUAL
+        '+' => (13, true),
+        '[' => (26, false), // KEY_LEFTBRACE
+        '{' => (26, true),
+        ']' => (27, false), // KEY_RIGHTBRACE
+        '}' => (27, true),
+        '\\' => (43, false), // KEY_BACKSLASH
+        '|' => (43, true),
+        ';' => (39, false), // KEY_SEMICOLON
+        ':' => (39, true),
+        '\'' => (40, false), // KEY_APOSTROPHE
+        '"' => (40, true),
+        '`' => (41, false), // KEY_GRAVE
+        '~' => (41, true),
+        ',' => (51, false), // KEY_COMMA
+        '<' => (51, true),
+        '.' => (52, false), // KEY_DOT
+        '>' => (52, true),
+        '/' => (53, false), // KEY_SLASH
+        '?' => (53, true),
+        _ => return None,
+    };
+    Some((code, shift))
+}
+
+/// Put `text` on the Wayland clipboard using `wl-copy`.
+pub fn clipboard_copy(text: &str) -> io::Result<()> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let mut child = Command::new("wl-copy")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(text.as_bytes())?;
+    }
+    if !child.wait()?.success() {
+        return Err(io::Error::other("wl-copy exited with an error"));
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------- key names
@@ -635,6 +734,19 @@ mod tests {
         assert_eq!(steps, 25);
         assert_eq!(frame, Duration::from_millis(16));
         assert_eq!(animation_steps(0).0, 1, "at least one frame");
+    }
+
+    #[test]
+    fn char_mapping() {
+        assert_eq!(char_to_key('a'), Some((30, false)));
+        assert_eq!(char_to_key('A'), Some((30, true)));
+        assert_eq!(char_to_key('1'), Some((2, false)));
+        assert_eq!(char_to_key('!'), Some((2, true)));
+        assert_eq!(char_to_key(' '), Some((57, false)));
+        assert_eq!(char_to_key('?'), Some((53, true)));
+        assert_eq!(char_to_key('\n'), Some((28, false)));
+        assert_eq!(char_to_key('中'), None, "non-ASCII is refused");
+        assert_eq!(char_to_key('€'), None);
     }
 
     #[test]

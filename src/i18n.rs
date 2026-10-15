@@ -66,6 +66,10 @@ pub struct Msg {
     pub duration_arity: &'static str,
     pub ease_arity: &'static str,
     pub bad_ease: &'static str,
+    pub type_text_required: &'static str,
+    pub type_delay_arity: &'static str,
+    pub type_unmappable: &'static str,
+    pub paste_failed: &'static str,
 
     // query.rs
     pub query_error: &'static str,
@@ -114,6 +118,8 @@ INPUT (via uinput; needs write access to /dev/uinput):
   keydown <key>                         Press a key (shift, a, Return, ...)
   keyup   <key>                         Release a key
   key <key>                             Press and release; chords: key ctrl+alt+t
+  type <text> [--delay MS]              Type ASCII text as key presses
+  type --paste <text>                   Paste any text (incl. non-ASCII) via Ctrl+V
   -h, --help                            Show this help
   -V, --version                         Show version
 
@@ -165,6 +171,10 @@ EXAMPLES:
     duration_arity: "'--duration' needs a number of milliseconds",
     ease_arity: "'--ease' needs a name: in-out or linear",
     bad_ease: "unknown easing '{0}'",
+    type_text_required: "missing text: `cwctrl type <text>` or `cwctrl type --paste <text>`",
+    type_delay_arity: "'--delay' needs a number of milliseconds",
+    type_unmappable: "cannot type '{0}' as a key (non-ASCII); use --paste for arbitrary text",
+    paste_failed: "clipboard paste failed: {0}",
     query_error: "query syntax error: {0}",
     q_unterminated: "unterminated string literal",
     q_missing_rparen: "missing closing ')'",
@@ -210,6 +220,8 @@ cwctrl — COSMIC 窗口查询与控制
   keydown <按键>                    按下按键 (shift, a, Return ...)
   keyup   <按键>                    松开按键
   key <按键>                        按下并松开; 组合键: key ctrl+alt+t
+  type <文本> [--delay MS]          以模拟按键输入 ASCII 文本
+  type --paste <文本>               用剪贴板 (Ctrl+V) 输入任意文本 (含中文)
   -h, --help                        显示帮助
   -V, --version                     显示版本
 
@@ -261,6 +273,10 @@ cwctrl — COSMIC 窗口查询与控制
     duration_arity: "'--duration' 需要毫秒数",
     ease_arity: "'--ease' 需要一个名称: in-out 或 linear",
     bad_ease: "未知的缓动 '{0}'",
+    type_text_required: "缺少文本: `cwctrl type <文本>` 或 `cwctrl type --paste <文本>`",
+    type_delay_arity: "'--delay' 需要毫秒数",
+    type_unmappable: "无法把 '{0}' 作为按键输入 (非 ASCII); 请用 --paste 输入任意文本",
+    paste_failed: "剪贴板粘贴失败: {0}",
     query_error: "查询语法错误: {0}",
     q_unterminated: "字符串字面量缺少结束引号",
     q_missing_rparen: "缺少右括号 ')'",

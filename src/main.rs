@@ -55,6 +55,7 @@ fn run(args: &[String]) -> Result<i32, Box<dyn Error>> {
         "keydown" => cmd_key(KeyMode::Down, &args[1..]),
         "keyup" => cmd_key(KeyMode::Up, &args[1..]),
         "key" => cmd_key(KeyMode::Tap, &args[1..]),
+        "type" => cmd_type(&args[1..]),
         "state" | "list" => cmd_list(&args[1..]),
         "activate" => cmd_activate(&args[1..]),
         "close" => cmd_control(cmd, None, &args[1..]),
@@ -809,6 +810,52 @@ fn cmd_key(mode: KeyMode, rest: &[String]) -> Result<i32, Box<dyn Error>> {
             for m in mods.iter().rev() {
                 kb.key(*m, false);
             }
+        }
+    }
+    Ok(0)
+}
+
+/// Type text, either as simulated key presses (US layout, ASCII only) or, with
+/// `--paste`, by putting it on the clipboard and sending Ctrl+V (any text).
+fn cmd_type(rest: &[String]) -> Result<i32, Box<dyn Error>> {
+    let mut paste = false;
+    let mut delay_ms: u64 = 20;
+    let mut parts: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < rest.len() {
+        match rest[i].as_str() {
+            "--paste" | "-p" => {
+                paste = true;
+                i += 1;
+            }
+            "--delay" | "-d" => {
+                let v = rest.get(i + 1).ok_or(i18n::m().type_delay_arity)?;
+                delay_ms = v
+                    .parse()
+                    .map_err(|_| i18n::fill1(i18n::m().bad_number, v))?;
+                i += 2;
+            }
+            other => {
+                parts.push(other.to_string());
+                i += 1;
+            }
+        }
+    }
+    let text = parts.join(" ");
+    if text.is_empty() {
+        return Err(i18n::m().type_text_required.into());
+    }
+
+    if paste {
+        input::clipboard_copy(&text).map_err(|e| i18n::fill1(i18n::m().paste_failed, e))?;
+        std::thread::sleep(Duration::from_millis(120));
+        let kb = Keyboard::create()?;
+        let v = input::keycode("v").ok_or(i18n::m().paste_failed)?;
+        kb.chord(&[input::KEY_LEFTCTRL], v);
+    } else {
+        let kb = Keyboard::create()?;
+        if let Err(c) = kb.type_text(&text, delay_ms) {
+            return Err(i18n::fill1(i18n::m().type_unmappable, c).into());
         }
     }
     Ok(0)
