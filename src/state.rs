@@ -34,6 +34,10 @@ use wayland_protocols::ext::workspace::v1::client::{
     ext_workspace_handle_v1::{Event as WorkspaceEvent, ExtWorkspaceHandleV1},
     ext_workspace_manager_v1::{self, Event as WsManagerEvent, ExtWorkspaceManagerV1},
 };
+use wayland_protocols::xdg::xdg_output::zv1::client::{
+    zxdg_output_manager_v1::ZxdgOutputManagerV1,
+    zxdg_output_v1::{Event as XdgOutputEvent, ZxdgOutputV1},
+};
 
 // zcosmic_toplevel_handle_v1::State (same values as upstream cosmic-ext-window-helper)
 pub const ST_MAXIMIZED: u32 = 0;
@@ -96,6 +100,13 @@ pub struct State {
     /// wl_output, in registry order.
     pub outputs: Vec<(wl_output::WlOutput, Option<String>)>,
     pub output_names: HashMap<ObjectId, String>,
+    /// Physical mode and scale per output, used to derive the logical pixel size
+    /// (needed by the absolute pointer).
+    pub output_mode: HashMap<ObjectId, (i32, i32)>,
+    pub output_scale: HashMap<ObjectId, i32>,
+    /// Logical size from `xdg_output.logical_size` (authoritative, preferred).
+    pub output_logical: HashMap<ObjectId, (i32, i32)>,
+    by_xdg_output: HashMap<ObjectId, ObjectId>,
 
     pub workspaces: HashMap<ObjectId, WorkspaceEntry>,
     pub workspace_state: HashMap<ObjectId, u32>,
@@ -105,6 +116,7 @@ pub struct State {
     pub workspace_manager: Option<ExtWorkspaceManagerV1>,
     pub toplevel_info: Option<ZcosmicToplevelInfoV1>,
     pub toplevel_manager: Option<ZcosmicToplevelManagerV1>,
+    pub xdg_output_manager: Option<ZxdgOutputManagerV1>,
 }
 
 // `as_chunks` needs Rust 1.88 while this project's MSRV is 1.86 (set by wayland-protocols).
@@ -188,6 +200,39 @@ impl State {
             .and_then(|g| g.output.clone())
             .or_else(|| w.outputs.first().cloned())
     }
+
+    /// Logical screen size in pixels. Prefers `xdg_output.logical_size`, falling
+    /// back to `wl_output.mode / scale`. Used as the uinput absolute pointer range.
+    ///
+    /// Note: this is the size of a single output and only the first one is used;
+    /// with multiple outputs the absolute coordinates may need an offset, since
+    /// window geometry is relative to each output.
+    pub fn logical_screen(&self) -> Option<(i32, i32)> {
+        if let Some(size) = self.output_logical.values().next() {
+            return Some(*size);
+        }
+        let (id, (w, h)) = self.output_mode.iter().next()?;
+        let scale = self.output_scale.get(id).copied().unwrap_or(1).max(1);
+        Some((w / scale, h / scale))
+    }
+}
+
+/// Create an `xdg_output` for every bound `wl_output` to obtain the **logical**
+/// size. COSMIC's `wl_output.mode` can be inaccurate, so this is authoritative.
+fn setup_xdg_outputs(state: &mut State, qh: &QueueHandle<State>) {
+    let Some(mgr) = state.xdg_output_manager.clone() else {
+        return;
+    };
+    let outs: Vec<wl_output::WlOutput> = state
+        .outputs
+        .iter()
+        .map(|(o, _)| o.clone())
+        .filter(|o| !state.by_xdg_output.values().any(|v| *v == o.id()))
+        .collect();
+    for out in outs {
+        let xo = mgr.get_xdg_output(&out, qh, ());
+        state.by_xdg_output.insert(xo.id(), out.id());
+    }
 }
 
 /// Connect to the compositor and collect state.
@@ -208,7 +253,10 @@ pub fn connect(
 
     let mut state = State::default();
     queue.roundtrip(&mut state)?; // globals, then bind what we need
-    queue.roundtrip(&mut state)?; // first batch of ext_foreign_toplevel_list handles
+    setup_xdg_outputs(&mut state, &qh);
+    queue.roundtrip(&mut state)?; // xdg_output logical_size + first toplevel batch
+    setup_xdg_outputs(&mut state, &qh); // catch outputs that appear in the second round
+    queue.roundtrip(&mut state)?;
     sync_more(&mut queue, &mut state, wait)?;
     Ok((conn, queue, state))
 }
@@ -278,6 +326,10 @@ impl Dispatch<wl_registry::WlRegistry, ()> for State {
                     registry.bind::<ExtWorkspaceManagerV1, _, _>(name, version.min(1), qh, ());
                 state.workspace_manager = Some(mgr);
             }
+            "zxdg_output_manager_v1" => {
+                let mgr = registry.bind::<ZxdgOutputManagerV1, _, _>(name, version.min(3), qh, ());
+                state.xdg_output_manager = Some(mgr);
+            }
             "zcosmic_toplevel_info_v1" => {
                 let info =
                     registry.bind::<ZcosmicToplevelInfoV1, _, _>(name, version.min(3), qh, ());
@@ -302,12 +354,50 @@ impl Dispatch<wl_output::WlOutput, ()> for State {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let wl_output::Event::Name { name } = event {
+        if let wl_output::Event::Name { name } = &event {
             let id = output.id();
             if let Some(slot) = state.outputs.iter_mut().find(|(o, _)| o.id() == id) {
                 slot.1 = Some(name.clone());
             }
-            state.output_names.insert(id, name);
+            state.output_names.insert(id, name.clone());
+        }
+        match event {
+            wl_output::Event::Mode { width, height, .. } => {
+                state.output_mode.insert(output.id(), (width, height));
+            }
+            wl_output::Event::Scale { factor } => {
+                state.output_scale.insert(output.id(), factor);
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Dispatch<ZxdgOutputManagerV1, ()> for State {
+    fn event(
+        _: &mut Self,
+        _: &ZxdgOutputManagerV1,
+        _: <ZxdgOutputManagerV1 as Proxy>::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl Dispatch<ZxdgOutputV1, ()> for State {
+    fn event(
+        state: &mut Self,
+        handle: &ZxdgOutputV1,
+        event: XdgOutputEvent,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let XdgOutputEvent::LogicalSize { width, height } = event {
+            if let Some(out) = state.by_xdg_output.get(&handle.id()).cloned() {
+                state.output_logical.insert(out, (width, height));
+            }
         }
     }
 }

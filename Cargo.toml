@@ -3,7 +3,7 @@ name = "cosmic-ext-cwctrl"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.86"
-description = "Query and control COSMIC (Wayland) windows from the command line"
+description = "Query and control COSMIC (Wayland) windows and inject mouse/keyboard input from the CLI"
 license = "MIT"
 repository = "https://github.com/yeahoo/cosmic-ext-cwctrl"
 authors = ["yeahoo"]
@@ -18,12 +18,14 @@ path = "src/main.rs"
 
 [dependencies]
 wayland-client = "0.31"
-wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+wayland-protocols = { version = "0.32", features = ["client", "staging", "unstable"] }
 # Generate the COSMIC private protocol bindings from protocols/*.xml (MIT)
 # instead of depending on the GPL-3.0-only cosmic-protocols crate.
 wayland-scanner = "0.31"
 wayland-backend = "0.3"
 regex = "1"
+# Talk to the uinput ioctls directly; no extra input crate needed.
+libc = "0.2"
 
 [profile.release]
 opt-level = 3

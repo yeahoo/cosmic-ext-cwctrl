@@ -98,7 +98,7 @@ fn tokenize(input: &str) -> Result<Vec<Tok>, QueryError> {
                 it.next();
                 out.push(Tok::RParen);
             }
-            // 运算符可以不带空格, 例如 `app_id='x'`
+            // Operators may appear without surrounding spaces, e.g. `app_id='x'`
             '=' => {
                 it.next();
                 out.push(Tok::Word("=".into()));
@@ -153,7 +153,8 @@ fn tokenize(input: &str) -> Result<Vec<Tok>, QueryError> {
             _ => {
                 let mut s = String::new();
                 while let Some(&ch) = it.peek() {
-                    // 运算符字符终止一个词, 这样 `app_id='x'` 才能切成三块
+                    // Operator characters terminate a word, so `app_id='x'` splits
+                    // into three tokens
                     if ch.is_whitespace()
                         || ch == '('
                         || ch == ')'
@@ -592,16 +593,20 @@ mod tests {
 
     #[test]
     fn operators_without_surrounding_whitespace() {
-        // cosmic-ext-window-helper 的既有配置写作 `app_id='x'`, 必须兼容
+        // Existing cosmic-ext-window-helper configs write `app_id='x'`, so keep
+        // supporting that form
         let w = win("google-chrome", "Chrome");
         assert!(hit("app_id='google-chrome'", &w));
         assert!(!hit("app_id!='google-chrome'", &w));
         assert!(hit("title~='Chrome'", &w));
         assert!(hit("app_id='google-chrome'and title='Chrome'", &w));
         assert!(hit("(app_id='google-chrome')", &w));
-        assert!(hit("app_id = 'google-chrome'", &w), "带空格仍应可用");
+        assert!(
+            hit("app_id = 'google-chrome'", &w),
+            "spaced form still works"
+        );
         assert!(hit("title ~= 'Chrome'i", &w));
-        // 组合: 无空格 + 逻辑运算
+        // combinator: no spaces + logical operators
         assert!(hit("app_id='a'or app_id='google-chrome'", &w));
     }
 }

@@ -5,10 +5,11 @@
 
 [English](README.md) | **简体中文**
 
-在 COSMIC™ 桌面上用命令行查询和控制窗口。
+在 COSMIC™ 桌面上，用命令行查询和控制窗口，并注入鼠标与键盘输入。
 
-本项目是 [`cosmic-ext-window-helper`](https://github.com/lapause/cosmic-ext-window-helper)
-的 Rust 重写版，启动速度快约 **300 倍**，并额外提供窗口几何信息。
+枚举与筛选顶层窗口，聚焦 / 关闭 / 最大化 / 移动它们，读取窗口几何信息，并通过
+内核 `uinput` 驱动指针和键盘。全部由一个约 2 MB 的同步二进制完成，没有解释器，
+也没有 async runtime，控制类命令约 1 毫秒返回。
 
 ## 为什么要重写
 
@@ -57,6 +58,13 @@ cwctrl <命令> [参数...] [查询]
   move_to  <工作区> <显示器> [查询] 移动到指定工作区
   cycle    [-b] [查询]              在同组匹配窗口间循环切换焦点
   interfaces                        列出合成器暴露的 Wayland 接口
+  mousemove <x> <y>                 指针绝对定位（逻辑像素）
+  mousemove -r <dx> <dy>            指针相对移动
+  mousedown|mouseup <left|right|middle>  按下 / 松开鼠标键
+  click [left|right|middle] [--at X Y] [--count N]
+  scroll <up|down|left|right> [N]   滚轮
+  keydown <键> / keyup <键>         按下 / 松开按键
+  key <键>                          按下并松开（组合键: ctrl+alt+t）
 
   -n, --no-wait   不等待 geometry（约 1ms，geometry 为 null）
 ```
@@ -142,6 +150,39 @@ Alt+S  ->  wezterm3              # 而不是 wezterm1
 
 `--no-wait` 下未能读取的字段输出 `null` 而非 `false`，避免把"未知"误报成"否"。
 
+### 输入注入（鼠标与键盘）
+
+```bash
+cwctrl mousemove 2648 464            # 绝对定位，逻辑像素（与 geometry 同一坐标空间）
+cwctrl mousemove -r 40 30            # 相对移动
+cwctrl click left --at 2648 464      # 先移动再点击
+cwctrl click --count 2               # 在当前位置双击
+cwctrl mousedown right && cwctrl mouseup right
+cwctrl scroll down 3
+cwctrl key ctrl+alt+t                # 按下并松开；支持组合键
+cwctrl keydown shift && cwctrl keyup shift
+```
+
+`enter` / `leave` / `over` 不是独立命令：它们是合成器在指针进入/离开窗口时
+自动产生的事件，`mousemove` 就能触发。
+
+注入走内核 **uinput**，而不是 Wayland 协议——Wayland 刻意不提供指针注入协议，
+COSMIC 也没有暴露 `zwlr_virtual_pointer_manager_v1`。这需要 `/dev/uinput` 的写
+权限；udev 的 `uaccess` 规则通常已授予当前登录用户，否则请把用户加入 `input`
+组。
+
+限制：
+
+- 坐标是**逻辑像素**，与 `geometry` 同一空间，所以 `click --at` 可以直接用
+  `cwctrl list` 给出的窗口中心。
+- 注入是全局的：作用于当前指针位置 / 键盘焦点，而不是你指定的窗口。要点击
+  某窗口请先 `mousemove` 过去；发按键前可先 `activate`。
+- `-r`（相对）会经过合成器的指针加速，因此是近似的；需要精确时用绝对
+  `mousemove`。
+- `keydown`/`keyup` 每次调用都会新建并销毁设备，所以跨两次调用按住的修饰键
+  不会保持；一次调用内请用组合键（`key ctrl+t`）。
+- 坐标范围只按第一个输出计算；多显示器布局可能需要额外偏移。
+
 ### 语言
 
 消息跟随 locale，检测顺序为 `CWCTRL_LANG`、`LC_ALL`、`LC_MESSAGES`、`LANG`。
@@ -163,6 +204,7 @@ CWCTRL_LANG=zh cwctrl --help
 | `zcosmic_toplevel_manager_v1` | `activate` / `close` / `set_maximized` / `set_fullscreen` / `move_to_ext_workspace` 等 |
 | `ext_workspace_manager_v1` | 工作区名称与激活状态 |
 | `wl_output` / `wl_seat` | 显示器名；`activate` 需要 seat |
+| `uinput`（内核） | 鼠标/键盘注入（Wayland 无对应协议） |
 
 两个容易踩的坑：
 
@@ -189,7 +231,7 @@ vendor 的 XML 生成绑定，从而保持整个项目为 MIT。
 
 ## 致谢
 
-- 行为与命令集参考 [`cosmic-ext-window-helper`](https://github.com/lapause/cosmic-ext-window-helper)（MIT）。
+- 窗口行为与命令集参考 [`cosmic-ext-window-helper`](https://github.com/lapause/cosmic-ext-window-helper)
 - 协议定义来自 [`pop-os/cosmic-protocols`](https://github.com/pop-os/cosmic-protocols)。
 - 基于 [`wayland-rs`](https://github.com/Smithay/wayland-rs)。
 

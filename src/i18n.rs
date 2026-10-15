@@ -50,6 +50,19 @@ pub struct Msg {
     // state.rs
     pub connect_failed: &'static str,
 
+    // Input injection
+    pub no_screen: &'static str,
+    pub mousemove_arity: &'static str,
+    pub bad_number: &'static str,
+    pub button_required: &'static str,
+    pub bad_button: &'static str,
+    pub click_at_arity: &'static str,
+    pub click_count_arity: &'static str,
+    pub scroll_arity: &'static str,
+    pub bad_axis: &'static str,
+    pub key_required: &'static str,
+    pub bad_key: &'static str,
+
     // query.rs
     pub query_error: &'static str,
     pub q_unterminated: &'static str,
@@ -81,6 +94,18 @@ COMMANDS:
   move_to  <WORKSPACE> <OUTPUT> [QUERY] Move windows to a workspace
   cycle    [-b] [QUERY]                 Cycle focus through the matching windows
   interfaces                            List Wayland interfaces the compositor exposes
+
+INPUT (via uinput; needs write access to /dev/uinput):
+  mousemove <x> <y>                     Move pointer to an absolute logical position
+  mousemove -r <dx> <dy>                Move pointer relatively
+  mousedown <left|right|middle>         Press a mouse button
+  mouseup   <left|right|middle>         Release a mouse button
+  click [left|right|middle] [--at X Y] [--count N]
+                                        (Double) click; --at moves the pointer first
+  scroll <up|down|left|right> [N]       Scroll the wheel
+  keydown <key>                         Press a key (shift, a, Return, ...)
+  keyup   <key>                         Release a key
+  key <key>                             Press and release; chords: key ctrl+alt+t
   -h, --help                            Show this help
   -V, --version                         Show version
 
@@ -117,6 +142,17 @@ EXAMPLES:
     no_output: "no output named '{0}'",
     no_workspace: "no workspace named '{0}'",
     connect_failed: "cannot connect to the Wayland display server: {0}",
+    no_screen: "could not determine the logical screen size (no output?)",
+    mousemove_arity: "'mousemove' needs two coordinates: <x> <y>",
+    bad_number: "'{0}' is not a valid integer",
+    button_required: "missing mouse button (left|right|middle)",
+    bad_button: "unknown mouse button '{0}'",
+    click_at_arity: "'click --at' needs X and Y",
+    click_count_arity: "'click --count' needs a number",
+    scroll_arity: "'scroll' needs a direction: up|down|left|right",
+    bad_axis: "unknown scroll direction '{0}'",
+    key_required: "missing key name",
+    bad_key: "unknown key '{0}'",
     query_error: "query syntax error: {0}",
     q_unterminated: "unterminated string literal",
     q_missing_rparen: "missing closing ')'",
@@ -147,6 +183,18 @@ cwctrl — COSMIC 窗口查询与控制
   move_to  <工作区> <显示器> [查询] 移动到指定工作区
   cycle    [-b] [查询]              在同组匹配窗口间循环切换焦点
   interfaces                        列出合成器暴露的 Wayland 接口
+
+输入注入 (走 uinput, 需要对 /dev/uinput 的写权限):
+  mousemove <x> <y>                 指针绝对定位 (逻辑像素)
+  mousemove -r <dx> <dy>            指针相对移动
+  mousedown <left|right|middle>     按下鼠标键
+  mouseup   <left|right|middle>     松开鼠标键
+  click [left|right|middle] [--at X Y] [--count N]
+                                    (双击) 点击; --at 先把指针移过去
+  scroll <up|down|left|right> [N]   滚轮
+  keydown <按键>                    按下按键 (shift, a, Return ...)
+  keyup   <按键>                    松开按键
+  key <按键>                        按下并松开; 组合键: key ctrl+alt+t
   -h, --help                        显示帮助
   -V, --version                     显示版本
 
@@ -183,6 +231,17 @@ cwctrl — COSMIC 窗口查询与控制
     no_output: "找不到名为 '{0}' 的显示器",
     no_workspace: "找不到名为 '{0}' 的工作区",
     connect_failed: "无法连接 Wayland 显示服务器: {0}",
+    no_screen: "无法确定屏幕逻辑尺寸 (没有输出?)",
+    mousemove_arity: "'mousemove' 需要两个坐标: <x> <y>",
+    bad_number: "'{0}' 不是合法的整数",
+    button_required: "缺少鼠标按键 (left|right|middle)",
+    bad_button: "未知的鼠标按键 '{0}'",
+    click_at_arity: "'click --at' 需要 X 和 Y",
+    click_count_arity: "'click --count' 需要一个数字",
+    scroll_arity: "'scroll' 需要方向: up|down|left|right",
+    bad_axis: "未知的滚动方向 '{0}'",
+    key_required: "缺少按键名",
+    bad_key: "未知的按键 '{0}'",
     query_error: "查询语法错误: {0}",
     q_unterminated: "字符串字面量缺少结束引号",
     q_missing_rparen: "缺少右括号 ')'",

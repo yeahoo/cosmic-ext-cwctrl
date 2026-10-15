@@ -5,10 +5,13 @@
 
 **English** | [简体中文](README.zh.md)
 
-Query and control windows on the COSMIC™ desktop from the command line.
+Query and control windows on the COSMIC™ desktop — and inject mouse and
+keyboard input — all from the command line.
 
-A Rust rewrite of [`cosmic-ext-window-helper`](https://github.com/lapause/cosmic-ext-window-helper)
-that starts ~300× faster and additionally exposes window geometry.
+Enumerate and filter toplevels, focus/close/maximize/move them, read their
+geometry, and drive the pointer and keyboard through the kernel `uinput`
+interface. It is a single ~2 MB synchronous binary with no interpreter and no
+async runtime, so control commands return in about a millisecond.
 
 ## Why
 
@@ -59,6 +62,13 @@ cwctrl <COMMAND> [ARGS...] [QUERY]
   move_to  <WORKSPACE> <OUTPUT> [QUERY] Move windows to a workspace
   cycle    [-b] [QUERY]                 Cycle focus through the matching windows
   interfaces                            List Wayland interfaces the compositor exposes
+  mousemove <x> <y>                     Move pointer (absolute, logical px)
+  mousemove -r <dx> <dy>                Move pointer relatively
+  mousedown|mouseup <left|right|middle> Press / release a mouse button
+  click [left|right|middle] [--at X Y] [--count N]
+  scroll <up|down|left|right> [N]       Scroll the wheel
+  keydown <key> / keyup <key>           Press / release a key
+  key <key>                             Press+release (chords: ctrl+alt+t)
 
   -n, --no-wait   do not wait for geometry (~1 ms, geometry will be null)
 ```
@@ -148,6 +158,43 @@ invocations.
 Fields that could not be read under `--no-wait` are reported as `null` rather
 than `false`, so "unknown" is never silently reported as "no".
 
+### Input injection (mouse & keyboard)
+
+```bash
+cwctrl mousemove 2648 464            # absolute, logical px (same space as geometry)
+cwctrl mousemove -r 40 30            # relative
+cwctrl click left --at 2648 464      # move, then click
+cwctrl click --count 2               # double-click at the current pointer
+cwctrl mousedown right && cwctrl mouseup right
+cwctrl scroll down 3
+cwctrl key ctrl+alt+t                # press+release; chords supported
+cwctrl keydown shift && cwctrl keyup shift
+```
+
+`enter` / `leave` / `over` are not commands: the compositor generates them
+whenever the pointer moves into or out of a window, so `mousemove` already
+produces them.
+
+Injection goes through the kernel **uinput** interface rather than a Wayland
+protocol, because Wayland intentionally has no pointer-injection protocol and
+COSMIC does not expose `zwlr_virtual_pointer_manager_v1`. Write access to
+`/dev/uinput` is required — usually the udev `uaccess` rule already grants it to
+the logged-in user; otherwise add yourself to the `input` group.
+
+Limits:
+
+- Coordinates are **logical pixels**, the same space as `geometry`, so
+  `click --at` can take a window centre straight from `cwctrl list`.
+- Injection is global: it acts on the current pointer position / keyboard focus,
+  not on a window you name. Move the pointer first, or `activate` a window
+  before sending keys.
+- `-r` (relative) goes through the compositor's pointer acceleration, so it is
+  approximate; prefer absolute `mousemove` when precision matters.
+- `keydown`/`keyup` build a device per invocation, so a modifier held across two
+  invocations is not preserved; use a chord (`key ctrl+t`) within one call.
+- Only the first output is used to derive the coordinate range; multi-output
+  layouts may need an offset.
+
 ### Language
 
 Messages follow the locale, checked in this order: `CWCTRL_LANG`, `LC_ALL`,
@@ -170,6 +217,7 @@ Protocols used:
 | `zcosmic_toplevel_manager_v1` | `activate` / `close` / `set_maximized` / `set_fullscreen` / `move_to_ext_workspace` / … |
 | `ext_workspace_manager_v1` | workspace names and active state |
 | `wl_output` / `wl_seat` | output names; a seat is required by `activate` |
+| `uinput` (kernel) | mouse/keyboard injection — no Wayland protocol exists |
 
 Two things that are easy to get wrong:
 
@@ -199,9 +247,8 @@ copyright notices are preserved inside each XML file.
 
 ## Credits
 
-- Behaviour and command set modelled on
+- Window behaviour and command set modelled on
   [`cosmic-ext-window-helper`](https://github.com/lapause/cosmic-ext-window-helper)
-  by Pierre Guillaume (MIT).
 - Protocol definitions from
   [`pop-os/cosmic-protocols`](https://github.com/pop-os/cosmic-protocols).
 - Built on [`wayland-rs`](https://github.com/Smithay/wayland-rs).

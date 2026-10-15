@@ -1,6 +1,7 @@
-//! cwctrl — fast COSMIC window query & control (Rust rewrite of cosmic-ext-window-helper)
+//! cwctrl — fast COSMIC window query & control
 
 mod i18n;
+mod input;
 mod protocols;
 mod query;
 mod state;
@@ -8,6 +9,7 @@ mod state;
 use std::error::Error;
 use std::time::Duration;
 
+use input::{Button, Keyboard, Mouse, ScrollAxis};
 use query::Query;
 use state::{
     ST_ACTIVATED, ST_FULLSCREEN, ST_MAXIMIZED, ST_MINIMIZED, ST_STICKY, State, WS_ACTIVE, Window,
@@ -42,6 +44,14 @@ fn run(args: &[String]) -> Result<i32, Box<dyn Error>> {
             Ok(0)
         }
         "interfaces" => cmd_interfaces(),
+        "mousemove" => cmd_mousemove(&args[1..]),
+        "mousedown" => cmd_mouse_button(true, &args[1..]),
+        "mouseup" => cmd_mouse_button(false, &args[1..]),
+        "click" => cmd_click(&args[1..]),
+        "scroll" => cmd_scroll(&args[1..]),
+        "keydown" => cmd_key(KeyMode::Down, &args[1..]),
+        "keyup" => cmd_key(KeyMode::Up, &args[1..]),
+        "key" => cmd_key(KeyMode::Tap, &args[1..]),
         "state" | "list" => cmd_list(&args[1..]),
         "activate" => cmd_activate(&args[1..]),
         "close" => cmd_control(cmd, None, &args[1..]),
@@ -572,4 +582,152 @@ fn window_json(st: &State, w: &Window, active_app: Option<&str>, indent: usize) 
         out_json = out_json,
         geom = geom,
     )
+}
+
+// ------------------------------------------------------------------ input injection
+//
+// Implemented via the kernel uinput interface (see src/input.rs). Mouse and
+// keyboard both go this way because Wayland has no pointer-injection protocol
+// and COSMIC exposes no virtual-pointer.
+//
+// enter/leave/over are not injectable events: the compositor generates them by
+// hit-testing the pointer position. Calling `mousemove` to place the pointer in
+// or out of a window is what produces enter / leave / motion.
+
+/// Logical screen size in pixels, used as the absolute pointer range.
+fn screen_size() -> Result<(i32, i32), Box<dyn Error>> {
+    let (_conn, _queue, st) = state::connect(Duration::from_millis(250))?;
+    let s = st.logical_screen().ok_or(i18n::m().no_screen)?;
+    if std::env::var_os("CWCTRL_DEBUG").is_some() {
+        eprintln!(
+            "debug: output_mode={:?} scale={:?} -> {:?}",
+            st.output_mode, st.output_scale, s
+        );
+    }
+    Ok(s)
+}
+
+enum KeyMode {
+    Down,
+    Up,
+    Tap,
+}
+
+fn parse_i32(s: &str) -> Result<i32, Box<dyn Error>> {
+    s.parse()
+        .map_err(|_| i18n::fill1(i18n::m().bad_number, s).into())
+}
+
+fn cmd_mousemove(rest: &[String]) -> Result<i32, Box<dyn Error>> {
+    let mut relative = false;
+    let mut nums: Vec<i32> = Vec::new();
+    for a in rest {
+        match a.as_str() {
+            "-r" | "--relative" => relative = true,
+            _ => nums.push(parse_i32(a)?),
+        }
+    }
+    if nums.len() != 2 {
+        return Err(i18n::m().mousemove_arity.into());
+    }
+    if relative {
+        Mouse::create(1, 1)?.move_rel(nums[0], nums[1]);
+    } else {
+        let (sw, sh) = screen_size()?;
+        Mouse::create(sw, sh)?.move_abs(nums[0], nums[1], sw, sh);
+    }
+    Ok(0)
+}
+
+fn cmd_mouse_button(down: bool, rest: &[String]) -> Result<i32, Box<dyn Error>> {
+    let name = rest
+        .first()
+        .map(String::as_str)
+        .ok_or(i18n::m().button_required)?;
+    let btn = Button::parse(name).ok_or_else(|| i18n::fill1(i18n::m().bad_button, name))?;
+    Mouse::create(1, 1)?.button(btn, down);
+    Ok(0)
+}
+
+fn cmd_click(rest: &[String]) -> Result<i32, Box<dyn Error>> {
+    let mut btn = Button::Left;
+    let mut count: u32 = 1;
+    let mut at: Option<(i32, i32)> = None;
+    let mut i = 0;
+    while i < rest.len() {
+        match rest[i].as_str() {
+            "--at" | "-a" => {
+                let x = rest.get(i + 1).ok_or(i18n::m().click_at_arity)?;
+                let y = rest.get(i + 2).ok_or(i18n::m().click_at_arity)?;
+                at = Some((parse_i32(x)?, parse_i32(y)?));
+                i += 3;
+            }
+            "--count" | "-c" => {
+                let n = rest.get(i + 1).ok_or(i18n::m().click_count_arity)?;
+                count = n
+                    .parse()
+                    .map_err(|_| i18n::fill1(i18n::m().bad_number, n))?;
+                i += 2;
+            }
+            other => {
+                btn =
+                    Button::parse(other).ok_or_else(|| i18n::fill1(i18n::m().bad_button, other))?;
+                i += 1;
+            }
+        }
+    }
+
+    // Only query the screen size when positioning is needed; a plain click can
+    // use a 1x1 placeholder range.
+    let (sw, sh) = match at {
+        Some(_) => screen_size()?,
+        None => (1, 1),
+    };
+    let m = Mouse::create(sw, sh)?;
+    if let Some((x, y)) = at {
+        m.move_abs(x, y, sw, sh);
+        std::thread::sleep(Duration::from_millis(40));
+    }
+    m.click(btn, count);
+    Ok(0)
+}
+
+fn cmd_scroll(rest: &[String]) -> Result<i32, Box<dyn Error>> {
+    let name = rest
+        .first()
+        .map(String::as_str)
+        .ok_or(i18n::m().scroll_arity)?;
+    let axis = ScrollAxis::parse(name).ok_or_else(|| i18n::fill1(i18n::m().bad_axis, name))?;
+    let n = match rest.get(1) {
+        Some(s) => parse_i32(s)?,
+        None => 1,
+    };
+    Mouse::create(1, 1)?.scroll(axis, n);
+    Ok(0)
+}
+
+fn cmd_key(mode: KeyMode, rest: &[String]) -> Result<i32, Box<dyn Error>> {
+    let spec = rest
+        .first()
+        .map(String::as_str)
+        .ok_or(i18n::m().key_required)?;
+    let (mods, code) =
+        input::parse_chord(spec).ok_or_else(|| i18n::fill1(i18n::m().bad_key, spec))?;
+    let kb = Keyboard::create()?;
+    match mode {
+        KeyMode::Tap => kb.chord(&mods, code),
+        KeyMode::Down => {
+            for m in &mods {
+                kb.key(*m, true);
+            }
+            kb.key(code, true);
+        }
+        KeyMode::Up => {
+            kb.key(code, false);
+            for m in mods.iter().rev() {
+                kb.key(*m, false);
+            }
+        }
+    }
+    Ok(0)
 }
