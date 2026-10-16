@@ -70,6 +70,8 @@ pub struct Msg {
     pub type_delay_arity: &'static str,
     pub type_unmappable: &'static str,
     pub paste_failed: &'static str,
+    pub drag_arity: &'static str,
+    pub pause_arity: &'static str,
 
     // query.rs
     pub query_error: &'static str,
@@ -114,6 +116,9 @@ INPUT (via uinput; needs write access to /dev/uinput):
   click [left|right|middle] [--at X Y] [--count N] [--from X Y] [--duration MS]
                                         (Double) click; --at moves the pointer first,
                                         --from animates that move
+  drag <x1> <y1> <x2> <y2> [...] [--button B] [--duration MS] [--from X Y] [--pause MS]
+                                        Press at the first point, pass through any
+                                        further points, release at the last
   scroll <up|down|left|right> [N]       Scroll the wheel
   keydown <key>                         Press a key (shift, a, Return, ...)
   keyup   <key>                         Release a key
@@ -175,6 +180,8 @@ EXAMPLES:
     type_delay_arity: "'--delay' needs a number of milliseconds",
     type_unmappable: "cannot type '{0}' as a key (non-ASCII); use --paste for arbitrary text",
     paste_failed: "clipboard paste failed: {0}",
+    drag_arity: "'drag' needs at least two points: <x1> <y1> <x2> <y2> [<x3> <y3> ...]",
+    pause_arity: "'--pause' needs a number of milliseconds",
     query_error: "query syntax error: {0}",
     q_unterminated: "unterminated string literal",
     q_missing_rparen: "missing closing ')'",
@@ -216,6 +223,8 @@ cwctrl — COSMIC 窗口查询与控制
   mouseup   <left|right|middle>     松开鼠标键
   click [left|right|middle] [--at X Y] [--count N] [--from X Y] [--duration MS]
                                     (双击) 点击; --at 先把指针移过去, --from 平滑移动
+  drag <x1> <y1> <x2> <y2> [...] [--button B] [--duration MS] [--from X Y] [--pause MS]
+                                    在第一个点按下, 经过中间各点, 在最后一个点松开
   scroll <up|down|left|right> [N]   滚轮
   keydown <按键>                    按下按键 (shift, a, Return ...)
   keyup   <按键>                    松开按键
@@ -277,6 +286,8 @@ cwctrl — COSMIC 窗口查询与控制
     type_delay_arity: "'--delay' 需要毫秒数",
     type_unmappable: "无法把 '{0}' 作为按键输入 (非 ASCII); 请用 --paste 输入任意文本",
     paste_failed: "剪贴板粘贴失败: {0}",
+    drag_arity: "'drag' 至少需要两个点: <x1> <y1> <x2> <y2> [<x3> <y3> ...]",
+    pause_arity: "'--pause' 需要毫秒数",
     query_error: "查询语法错误: {0}",
     q_unterminated: "字符串字面量缺少结束引号",
     q_missing_rparen: "缺少右括号 ')'",

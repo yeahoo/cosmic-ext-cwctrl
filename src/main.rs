@@ -20,6 +20,8 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Default animation length for a smooth `mousemove` / `click --at`, in ms.
 const DEFAULT_DURATION_MS: u64 = 400;
+/// Default drag length, in ms.
+const DEFAULT_DRAG_MS: u64 = 500;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -51,6 +53,7 @@ fn run(args: &[String]) -> Result<i32, Box<dyn Error>> {
         "mousedown" => cmd_mouse_button(true, &args[1..]),
         "mouseup" => cmd_mouse_button(false, &args[1..]),
         "click" => cmd_click(&args[1..]),
+        "drag" => cmd_drag(&args[1..]),
         "scroll" => cmd_scroll(&args[1..]),
         "keydown" => cmd_key(KeyMode::Down, &args[1..]),
         "keyup" => cmd_key(KeyMode::Up, &args[1..]),
@@ -772,6 +775,85 @@ fn cmd_click(rest: &[String]) -> Result<i32, Box<dyn Error>> {
         }
     }
     m.click(btn, count);
+    Ok(0)
+}
+
+/// Press, move and release within a single invocation -- the device stays alive
+/// for the whole gesture, so the button is really held down while moving. Accepts
+/// two or more points; intermediate ones are passed through on the way.
+fn cmd_drag(rest: &[String]) -> Result<i32, Box<dyn Error>> {
+    let mut btn = Button::Left;
+    let mut pause_ms: u64 = 120;
+    let mut nums: Vec<i32> = Vec::new();
+    let mut from: Option<(i32, i32)> = None;
+    let mut duration: Option<u64> = None;
+    let mut ease = input::Ease::InOut;
+    let mut i = 0;
+    while i < rest.len() {
+        if let Some(n) = take_move_opt(rest, i, &mut from, &mut duration, &mut ease)? {
+            i += n;
+            continue;
+        }
+        match rest[i].as_str() {
+            "--button" | "-b" => {
+                let v = rest.get(i + 1).ok_or(i18n::m().button_required)?;
+                btn = Button::parse(v).ok_or_else(|| i18n::fill1(i18n::m().bad_button, v))?;
+                i += 2;
+            }
+            "--pause" => {
+                let v = rest.get(i + 1).ok_or(i18n::m().pause_arity)?;
+                pause_ms = v
+                    .parse()
+                    .map_err(|_| i18n::fill1(i18n::m().bad_number, v))?;
+                i += 2;
+            }
+            other => {
+                nums.push(parse_i32(other)?);
+                i += 1;
+            }
+        }
+    }
+    if nums.len() < 4 || nums.len() % 2 != 0 {
+        return Err(i18n::m().drag_arity.into());
+    }
+    let points: Vec<(i32, i32)> = nums.chunks_exact(2).map(|c| (c[0], c[1])).collect();
+    let start = points[0];
+    let (sw, sh) = screen_size()?;
+    let m = Mouse::create(sw, sh)?;
+    let total_ms = duration.unwrap_or(DEFAULT_DRAG_MS);
+
+    // Move onto the start point first (animated only when --from is given).
+    match from {
+        Some(f) => m.move_smooth_abs(f, start, sw, sh, total_ms, ease),
+        None => {
+            m.move_abs(start.0, start.1, sw, sh);
+            std::thread::sleep(Duration::from_millis(40));
+        }
+    }
+
+    m.button(btn, true);
+    std::thread::sleep(Duration::from_millis(pause_ms));
+
+    // Split `--duration` across the segments in proportion to their length, so
+    // it is the total gesture time (intermediate points are passed through).
+    let seg = |a: (i32, i32), b: (i32, i32)| -> f64 {
+        let dx = f64::from(a.0 - b.0);
+        let dy = f64::from(a.1 - b.1);
+        (dx * dx + dy * dy).sqrt()
+    };
+    let total: f64 = points.windows(2).map(|w| seg(w[0], w[1])).sum();
+    let count = points.len() - 1;
+    for w in points.windows(2) {
+        let ms = if total > 0.0 {
+            (total_ms as f64 * seg(w[0], w[1]) / total).round() as u64
+        } else {
+            total_ms / count as u64
+        };
+        m.move_smooth_abs(w[0], w[1], sw, sh, ms.max(1), ease);
+    }
+
+    std::thread::sleep(Duration::from_millis(80));
+    m.button(btn, false);
     Ok(0)
 }
 

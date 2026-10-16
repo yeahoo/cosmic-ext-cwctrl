@@ -159,6 +159,9 @@ cwctrl mousemove 2648 464 --from 1200 800 --duration 600   # 平滑移动，观�
 cwctrl click left --at 2648 464      # 先移动再点击
 cwctrl click left --at 2648 464 --from 1200 800 --duration 600   # 平滑移动后点击
 cwctrl click --count 2               # 在当前位置双击
+cwctrl drag 1200 800 2000 1200       # 在 (1200,800) 按下, 拖到 (2000,1200), 松开
+cwctrl drag 1200 800 2000 1200 1600 1500   # 经过中间点 (可给任意多个点)
+cwctrl drag 1200 800 2000 1200 --duration 800 --from 600 400   # 平滑靠近后拖动
 cwctrl mousedown right && cwctrl mouseup right
 cwctrl scroll down 3
 cwctrl key ctrl+alt+t                # 按下并松开；支持组合键
@@ -192,6 +195,11 @@ COSMIC 也没有暴露 `zwlr_virtual_pointer_manager_v1`。这需要 `/dev/uinpu
 - `type` 按 US 布局模拟按键，只覆盖可打印 ASCII。非 ASCII 文本会被拒绝，
   除非加 `--paste`——它把文本写入剪贴板再发 Ctrl+V（会覆盖剪贴板）。
   `--delay MS` 控制字符间停顿（默认 20 毫秒）。
+- `drag` 在**一次调用内**完成按下/移动/松开，这是真正做到“按住并移动”的唯一
+  方式：跨两次调用的 `mousedown` + `mouseup` 做不到，因为每次调用都会新建
+  并销毁自己的设备。可给两个或更多点，中间点会被依次经过。
+  `--duration MS` 是整段手势的总时长（按各段长度比例分配），
+  `--pause MS` 是按下与开始移动之间的停顿。
 - 坐标范围只按第一个输出计算；多显示器布局可能需要额外偏移。
 
 ### 语言

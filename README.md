@@ -167,6 +167,9 @@ cwctrl mousemove 2648 464 --from 1200 800 --duration 600   # animated, followabl
 cwctrl click left --at 2648 464      # move, then click
 cwctrl click left --at 2648 464 --from 1200 800 --duration 600   # animated, then click
 cwctrl click --count 2               # double-click at the current pointer
+cwctrl drag 1200 800 2000 1200       # press at (1200,800), drag to (2000,1200), release
+cwctrl drag 1200 800 2000 1200 1600 1500   # through an intermediate point (any number)
+cwctrl drag 1200 800 2000 1200 --duration 800 --from 600 400   # animated approach + drag
 cwctrl mousedown right && cwctrl mouseup right
 cwctrl scroll down 3
 cwctrl key ctrl+alt+t                # press+release; chords supported
@@ -205,6 +208,12 @@ Limits:
   refused unless `--paste` is given, which writes the text to the clipboard and
   sends Ctrl+V (this overwrites the clipboard). `--delay MS` sets the pause
   between characters (default 20 ms).
+- `drag` does press/move/release inside one invocation, which is the only way to
+  actually hold a button while moving: `mousedown` + `mouseup` across separate
+  invocations cannot, because each invocation creates and destroys its own
+  device. Give two or more points; intermediate ones are passed through.
+  `--duration MS` is the total gesture time (split across segments by length),
+  and `--pause MS` is the delay between pressing and starting to move.
 - Only the first output is used to derive the coordinate range; multi-output
   layouts may need an offset.
 
