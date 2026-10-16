@@ -58,15 +58,19 @@ cwctrl <命令> [参数...] [查询]
   move_to  <工作区> <显示器> [查询] 移动到指定工作区
   cycle    [-b] [查询]              在同组匹配窗口间循环切换焦点
   interfaces                        列出合成器暴露的 Wayland 接口
-  mousemove <x> <y>                 指针绝对定位（逻辑像素）
-  mousemove -r <dx> <dy>            指针相对移动
-  mousedown|mouseup <left|right|middle>  按下 / 松开鼠标键
-  click [left|right|middle] [--at X Y] [--count N]
-  scroll <up|down|left|right> [N]   滚轮
-  keydown <键> / keyup <键>         按下 / 松开按键
-  key <键>                          按下并松开（组合键: ctrl+alt+t）
+
+  mousemove <x> <y> [--from X Y] [--duration MS] [--ease in-out|linear]
+  mousemove -r <dx> <dy> [--duration MS]
+  mousedown|mouseup <left|right|middle>
+  click [left|right|middle] [--at X Y] [--count N] [--from X Y] [--duration MS]
+  drag <x1> <y1> <x2> <y2> [...] [--button B] [--duration MS] [--from X Y] [--pause MS]
+  scroll <up|down|left|right> [N]
+  keydown <键> / keyup <键> / key <键>
+  type <文本> [--delay MS] / type --paste <文本>
 
   -n, --no-wait   不等待 geometry（约 1ms，geometry 为 null）
+  -h, --help      显示帮助（任何子命令后加也可）
+  -V, --version   显示版本
 ```
 
 ### 查询语法
@@ -194,7 +198,8 @@ COSMIC 也没有暴露 `zwlr_virtual_pointer_manager_v1`。这需要 `/dev/uinpu
   不会保持；一次调用内请用组合键（`key ctrl+t`）。
 - `type` 按 US 布局模拟按键，只覆盖可打印 ASCII。非 ASCII 文本会被拒绝，
   除非加 `--paste`——它把文本写入剪贴板再发 Ctrl+V（会覆盖剪贴板）。
-  `--delay MS` 控制字符间停顿（默认 20 毫秒）。
+  `--delay MS` 控制字符间停顿（默认 20 毫秒）。文本前加 `--` 可原样传入，
+  例如 `type -- --help`。
 - `drag` 在**一次调用内**完成按下/移动/松开，这是真正做到“按住并移动”的唯一
   方式：跨两次调用的 `mousedown` + `mouseup` 做不到，因为每次调用都会新建
   并销毁自己的设备。可给两个或更多点，中间点会被依次经过。

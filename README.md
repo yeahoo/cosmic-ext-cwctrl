@@ -62,15 +62,19 @@ cwctrl <COMMAND> [ARGS...] [QUERY]
   move_to  <WORKSPACE> <OUTPUT> [QUERY] Move windows to a workspace
   cycle    [-b] [QUERY]                 Cycle focus through the matching windows
   interfaces                            List Wayland interfaces the compositor exposes
-  mousemove <x> <y>                     Move pointer (absolute, logical px)
-  mousemove -r <dx> <dy>                Move pointer relatively
-  mousedown|mouseup <left|right|middle> Press / release a mouse button
-  click [left|right|middle] [--at X Y] [--count N]
-  scroll <up|down|left|right> [N]       Scroll the wheel
-  keydown <key> / keyup <key>           Press / release a key
-  key <key>                             Press+release (chords: ctrl+alt+t)
+
+  mousemove <x> <y> [--from X Y] [--duration MS] [--ease in-out|linear]
+  mousemove -r <dx> <dy> [--duration MS]
+  mousedown|mouseup <left|right|middle>
+  click [left|right|middle] [--at X Y] [--count N] [--from X Y] [--duration MS]
+  drag <x1> <y1> <x2> <y2> [...] [--button B] [--duration MS] [--from X Y] [--pause MS]
+  scroll <up|down|left|right> [N]
+  keydown <key> / keyup <key> / key <key>
+  type <text> [--delay MS] / type --paste <text>
 
   -n, --no-wait   do not wait for geometry (~1 ms, geometry will be null)
+  -h, --help      show this help (also works after any subcommand)
+  -V, --version   show version
 ```
 
 ### Query syntax
@@ -207,7 +211,8 @@ Limits:
 - `type` simulates a US layout and covers printable ASCII only. Non-ASCII text is
   refused unless `--paste` is given, which writes the text to the clipboard and
   sends Ctrl+V (this overwrites the clipboard). `--delay MS` sets the pause
-  between characters (default 20 ms).
+  between characters (default 20 ms). Use `--` before the text to pass it
+  literally, e.g. `type -- --help`.
 - `drag` does press/move/release inside one invocation, which is the only way to
   actually hold a button while moving: `mousedown` + `mouseup` across separate
   invocations cannot, because each invocation creates and destroys its own

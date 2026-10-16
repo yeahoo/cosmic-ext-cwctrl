@@ -39,6 +39,18 @@ fn run(args: &[String]) -> Result<i32, Box<dyn Error>> {
         print!("{}", i18n::m().help);
         return Ok(0);
     };
+    // `cwctrl <cmd> --help` shows the help instead of failing to parse it. A
+    // literal `--` stops the scan so a command can still take `--help` as data
+    // (e.g. `cwctrl type -- --help`).
+    let opts = &args[1..];
+    let scanned = match opts.iter().position(|a| a == "--") {
+        Some(p) => &opts[..p],
+        None => opts,
+    };
+    if scanned.iter().any(|a| a == "-h" || a == "--help") {
+        print!("{}", i18n::m().help);
+        return Ok(0);
+    }
     match cmd {
         "-h" | "--help" | "help" => {
             print!("{}", i18n::m().help);
@@ -916,6 +928,10 @@ fn cmd_type(rest: &[String]) -> Result<i32, Box<dyn Error>> {
                     .parse()
                     .map_err(|_| i18n::fill1(i18n::m().bad_number, v))?;
                 i += 2;
+            }
+            "--" => {
+                parts.extend(rest[i + 1..].iter().cloned());
+                break;
             }
             other => {
                 parts.push(other.to_string());
